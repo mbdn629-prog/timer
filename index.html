@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Pixel Chrono — Digital Clock</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fontsource/press-start-2p@5.0.18/index.css" />
+<style>
+  :root {
+    --bg: #1a1033;
+    --fg: #ffffff;
+    --accent: #ff2e88;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "Press Start 2P", monospace;
+    image-rendering: pixelated;
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+    transition: background 0.4s ease;
+    cursor: crosshair;
+  }
+
+  /* Subtle pixel grid overlay */
+  body::before {
+    content: "";
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 16px 16px;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* CRT scanlines */
+  body::after {
+    content: "";
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0.12) 3px,
+      rgba(0,0,0,0) 4px
+    );
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  #stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 3;
+  }
+
+  /* Clock container */
+  .clock {
+    text-align: center;
+    padding: 40px 60px;
+    border: 4px solid var(--fg);
+    box-shadow:
+      8px 8px 0 0 var(--fg),
+      inset 0 0 0 4px var(--bg);
+    background: var(--bg);
+    position: relative;
+    max-width: 95vw;
+  }
+
+  .clock .label {
+    font-size: 10px;
+    letter-spacing: 4px;
+    margin-bottom: 18px;
+    opacity: 0.7;
+  }
+
+  .time-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .unit {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 90px;
+  }
+
+  .unit .val {
+    font-size: clamp(18px, 4vw, 42px);
+    line-height: 1.1;
+    text-shadow: 3px 3px 0 rgba(0,0,0,0.5);
+  }
+
+  .unit .lbl {
+    font-size: 8px;
+    margin-top: 10px;
+    letter-spacing: 2px;
+    opacity: 0.65;
+  }
+
+  .sep {
+    font-size: clamp(18px, 4vw, 42px);
+    padding: 0 4px;
+    animation: blink 1s steps(2, start) infinite;
+    align-self: flex-start;
+  }
+
+  @keyframes blink { to { opacity: 0; } }
+
+  .ms-row {
+    margin-top: 22px;
+    font-size: clamp(12px, 2vw, 20px);
+    letter-spacing: 3px;
+    opacity: 0.85;
+  }
+
+  .ms-row .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    background: var(--fg);
+    margin: 0 8px;
+    vertical-align: middle;
+  }
+
+  .date-line {
+    margin-top: 18px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    opacity: 0.75;
+  }
+
+  /* Bottom hint */
+  .hint {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 8px;
+    letter-spacing: 3px;
+    opacity: 0.5;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  /* Settings gear icon */
+  .gear {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    width: 36px; height: 36px;
+    border: 3px solid var(--fg);
+    background: var(--bg);
+    color: var(--fg);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+    font-size: 12px;
+    box-shadow: 3px 3px 0 var(--fg);
+    transition: transform 0.15s;
+  }
+  .gear:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 var(--fg); }
+  .gear:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 var(--fg); }
+
+  /* Pop-up panel */
+  .panel {
+    position: fixed;
+    top: 60px;
+    right: 16px;
+    width: 280px;
+    background: var(--bg);
+    border: 4px solid var(--fg);
+    box-shadow: 6px 6px 0 var(--fg);
+    padding: 18px;
+    z-index: 10;
+    font-size: 9px;
+    letter-spacing: 1px;
+    display: none;
+  }
+  .panel.open { display: block; animation: pop 0.15s steps(3); }
+  @keyframes pop { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  .panel h3 {
+    font-size: 10px;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 2px dashed var(--fg);
+    letter-spacing: 2px;
+  }
+
+  .field { margin-bottom: 16px; }
+  .field .ftitle { margin-bottom: 8px; opacity: 0.85; }
+
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+  }
+  .sw {
+    aspect-ratio: 1/1;
+    border: 2px solid var(--fg);
+    cursor: pointer;
+    transition: transform 0.1s;
+  }
+  .sw:hover { transform: scale(1.15); }
+  .sw.active { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--fg); }
+
+  .panel .close {
+    margin-top: 6px;
+    width: 100%;
+    background: var(--fg);
+    color: var(--bg);
+    border: none;
+    padding: 10px;
+    font-family: inherit;
+    font-size: 9px;
+    letter-spacing: 2px;
+    cursor: pointer;
+  }
+  .panel .close:hover { opacity: 0.85; }
+
+  /* Explosion canvas */
+  #boom {
+    position: fixed; inset: 0;
+    pointer-events: none;
+    z-index: 20;
+  }
+
+  /* Noon banner */
+  .noon-banner {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%) scale(0);
+    font-size: clamp(20px, 5vw, 48px);
+    color: var(--accent);
+    text-shadow: 4px 4px 0 #000;
+    z-index: 25;
+    pointer-events: none;
+    letter-spacing: 4px;
+    border: 4px solid var(--accent);
+    padding: 20px 40px;
+    background: var(--bg);
+    box-shadow: 8px 8px 0 #000;
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .noon-banner.show {
+    transform: translate(-50%, -50%) scale(1) rotate(-3deg);
+    opacity: 1;
+  }
+
+  @media (max-width: 600px) {
+    .clock { padding: 24px 20px; }
+    .unit { min-width: 60px; }
+    .panel { width: calc(100vw - 32px); right: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<button class="gear" id="gearBtn" title="Settings (V)">⚙</button>
+
+<aside class="panel" id="panel">
+  <h3>⚙ SETTINGS</h3>
+
+  <div class="field">
+    <div class="ftitle">► BACKGROUND COLOR</div>
+    <div class="swatches" id="bgSwatches"></div>
+  </div>
+
+  <button class="close" id="closeBtn">CLOSE [V]</button>
+</aside>
+
+<div id="stage">
+  <div class="clock">
+    <div class="label">PIXEL CHRONO</div>
+    <div class="time-row">
+      <div class="unit"><div class="val" id="days">000</div><div class="lbl">DAYS</div></div>
+      <div class="sep">:</div>
+      <div class="unit"><div class="val" id="hours">00</div><div class="lbl">HRS</div></div>
+      <div class="sep">:</div>
+      <div class="unit"><div class="val" id="mins">00</div><div class="lbl">MIN</div></div>
+      <div class="sep">:</div>
+      <div class="unit"><div class="val" id="secs">00</div><div class="lbl">SEC</div></div>
+    </div>
+    <div class="ms-row"><span class="dot"></span><span id="ms">000</span> MS</div>
+    <div class="date-line" id="dateLine">---</div>
+  </div>
+</div>
+
+<div class="hint">PRESS [ V ] FOR SETTINGS</div>
+
+<canvas id="boom"></canvas>
+<div class="noon-banner" id="noonBanner">★ 12:00 ★</div>
+
+<script>
+/* ============================================================
+   PIXEL CHRONO - Single file clock
+   ============================================================ */
+
+/* ---------- 1. DATE / CLOCK ENGINE ---------- */
+const el = id => document.getElementById(id);
+const $days = el('days'), $hours = el('hours'), $mins = el('mins'),
+      $secs = el('secs'), $ms = el('ms'), $date = el('dateLine');
+
+// Reference: count days since start of current year
+const YEAR_START = new Date(new Date().getFullYear(), 0, 1).getTime();
+
+let lastHour = -1; // to detect 12:00 transitions
+
+function pad(n, len = 2) { return String(n).padStart(len, '0'); }
+
+function tick() {
+  const now = new Date();
+  const daysInYear = Math.floor((now - YEAR_START) / 86400000);
+  $days.textContent  = pad(daysInYear, 3);
+  $hours.textContent = pad(now.getHours());
+  $mins.textContent  = pad(now.getMinutes());
+  $secs.textContent  = pad(now.getSeconds());
+  $ms.textContent    = pad(now.getMilliseconds(), 3);
+
+  // Date line
+  const opts = { weekday:'short', year:'numeric', month:'short', day:'numeric' };
+  $date.textContent = now.toLocaleDateString('en-US', opts).toUpperCase();
+
+  // Explosion trigger: 12:00:00 (within first 500ms of the hour)
+  const currentHour = now.getHours();
+  if (currentHour === 12 && now.getMinutes() === 0 && now.getSeconds() === 0 && now.getMilliseconds() < 500 && lastHour !== 12) {
+    triggerNoon();
+  }
+  if (currentHour === 0 && now.getMinutes() === 0 && now.getSeconds() === 0 && now.getMilliseconds() < 500 && lastHour !== 0) {
+    triggerNoon();
+  }
+  lastHour = currentHour;
+}
+
+setInterval(tick, 16); // ~60fps for smooth ms
+tick();
+
+/* ---------- 2. SETTINGS PANEL ---------- */
+const bgColors = ['#1a1033','#0d1b2a','#0f2419','#2a0a1a','#111111','#f4e4ba','#000814','#3d0066','#1b263b','#003049','#4a0e0e','#184e77'];
+
+const bgBox = el('bgSwatches');
+
+function buildBgSwatches(container, palette) {
+  palette.forEach(c => {
+    const s = document.createElement('div');
+    s.className = 'sw';
+    s.style.background = c;
+    s.dataset.val = c;
+    s.addEventListener('click', () => {
+      document.documentElement.style.setProperty('--bg', c);
+      [...container.children].forEach(x => x.classList.remove('active'));
+      s.classList.add('active');
+    });
+    container.appendChild(s);
+  });
+  container.children[0]?.classList.add('active');
+}
+buildBgSwatches(bgBox, bgColors);
+
+const panel = el('panel');
+function togglePanel() { panel.classList.toggle('open'); }
+el('gearBtn').addEventListener('click', togglePanel);
+el('closeBtn').addEventListener('click', () => panel.classList.remove('open'));
+
+document.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() === 'v' && !e.ctrlKey && !e.metaKey) {
+    togglePanel();
+  }
+});
+
+/* ---------- 3. EXPLOSION AT 12:00 ---------- */
+const canvas = el('boom');
+const ctx = canvas.getContext('2d');
+let particles = [];
+let rafId = null;
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function triggerNoon() {
+  const banner = el('noonBanner');
+  banner.classList.add('show');
+  setTimeout(() => banner.classList.remove('show'), 2800);
+
+  // Spawn particles from center
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const colors = ['#FFD93D','#FF2E88','#00E0FF','#7CFFB2','#C084FC','#FB5607','#FFF'];
+  for (let i = 0; i < 220; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 10 + 3;
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      life: 120 + Math.random() * 60,
+      age: 0,
+      size: Math.floor(Math.random() * 6 + 4),
+      color: colors[Math.floor(Math.random() * colors.length)],
+      gravity: 0.12
+    });
+  }
+  if (!rafId) animateBoom();
+}
+
+function animateBoom() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += p.gravity;
+    p.vx *= 0.99;
+    p.age++;
+    const alpha = Math.max(0, 1 - p.age / p.life);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    const s = p.size;
+    ctx.fillRect(Math.floor(p.x / 2) * 2, Math.floor(p.y / 2) * 2, s, s);
+  });
+  ctx.globalAlpha = 1;
+  particles = particles.filter(p => p.age < p.life);
+  if (particles.length > 0) {
+    rafId = requestAnimationFrame(animateBoom);
+  } else {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    rafId = null;
+  }
+}
+
+// Demo: double-click anywhere to test explosion
+document.addEventListener('dblclick', e => {
+  if (e.target.closest('.panel') || e.target.closest('.gear')) return;
+  triggerNoon();
+});
+</script>
+</body>
+</html>
